@@ -109,15 +109,29 @@ export class Toolbar {
 
     // These functions can be overridden
     this.buildInfoDiv(br.$('.BRinfo'));
-    this.buildShareDiv(br.$('.BRshare'));
+    const $shareDiv = br.$('.BRshare');
+    this.buildShareDiv($shareDiv);
+    $shareDiv.find('.floatShut').on('click', () => $.colorbox.close());
 
-    br.$('.share').colorbox({
+    const resizeShare = () => $.colorbox.resize({innerWidth: $shareDiv.outerWidth()});
+    br.refs.$BRtoolbar.find('.share').colorbox({
       inline: true,
       opacity: "0.5",
-      href: br.$('.BRshare'),
+      href: $shareDiv,
+      fixed: true,
+      maxWidth: '100%',
+      maxHeight: '100%',
+      onOpen: () => {
+        $('#colorbox').attr({'aria-label': 'Share', 'aria-modal': 'true'});
+        $(window).on('resize.BRshare', resizeShare);
+      },
       onLoad: () => {
         br.trigger(EVENTS.stop);
-        br.$('.BRpageviewValue').val(window.location.href);
+        $shareDiv.find('.BRpageviewValue').val(window.location.href);
+      },
+      onCleanup: () => {
+        $('#colorbox').removeAttr('aria-label aria-modal');
+        $(window).off('resize.BRshare', resizeShare);
       },
     });
     br.$('.info').colorbox({
@@ -135,23 +149,31 @@ export class Toolbar {
    */
   buildShareDiv($shareDiv) {
     const { br } = this;
-    const pageView = document.location + '';
-    const bookView = (pageView + '').replace(/#.*/,'');
+    const pageView = window.location.href;
+    // In history mode, the current page is part of the path.
+    const getBookView = () => br.options?.urlMode === 'history' && br.options.urlHistoryBasePath
+      ? new URL(br.options.urlHistoryBasePath, window.location.href).href
+      : window.location.href.split('#')[0];
+    const bookView = getBookView();
 
     const embedHtml = !br.getEmbedCode ? '' : `
       <div class="share-embed">
         <p class="share-embed-prompt">Copy and paste one of these options to share this book elsewhere.</p>
         <form method="post" action="">
           <fieldset class="fieldset-share-pageview">
-            <label for="pageview">Link to this page view</label>
-            <input type="text" name="pageview" class="BRpageviewValue" value="${pageView}"/>
+            <label>
+              Link to this page view
+              <input type="text" name="pageview" class="BRpageviewValue" value="${escapeHTML(pageView)}"/>
+            </label>
           </fieldset>
           <fieldset class="fieldset-share-book-link">
-            <label for="booklink">Link to the book</label>
-            <input type="text" name="booklink" class="booklink" value="${bookView}"/>
+            <label>
+              Link to the book
+              <input type="text" name="booklink" class="booklink" value="${escapeHTML(bookView)}"/>
+            </label>
           </fieldset>
           <fieldset class="fieldset-embed">
-            <label for="iframe">Embed a mini Book Reader</label>
+            <legend>Embed a mini Book Reader</legend>
             <fieldset class="sub">
               <label class="sub">
                 <input type="radio" name="pages" value="${br.constMode1up}" checked="checked"/>
@@ -166,25 +188,27 @@ export class Toolbar {
                 Open to this page?
               </label>
             </fieldset>
-            <textarea cols="30" rows="4" name="iframe" class="BRframeEmbed"></textarea>
+            <textarea cols="30" rows="4" name="iframe" class="BRframeEmbed" aria-label="Embed a mini Book Reader"></textarea>
           </fieldset>
         </form>
       </div>`;
 
     const $form = $(`
-      <div class="share-title">Share this book</div>
-      <div class="share-social">
-        <label class="sub open-to-this-page">
-          <input class="thispage-social" type="checkbox" />
+      <div class="share-content">
+        <div class="share-title">Share this book</div>
+        <label class="open-to-this-page">
+          <input class="thispage-social" type="checkbox">
           Open to this page?
         </label>
-        <div><button class="BRaction share facebook-share-button"><i class="BRicon fb" /> Facebook</button></div>
-        <div><button class="BRaction share twitter-share-button"><i class="BRicon twitter" /> Twitter</button></div>
-        <div><button class="BRaction share email-share-button"><i class="BRicon email" /> Email</button></div>
+        <div class="share-social">
+          <button class="BRaction facebook-share-button" type="button"><i class="BRicon fb" aria-hidden="true"></i> Facebook</button>
+          <button class="BRaction x-share-button" type="button"><i class="BRicon x" aria-hidden="true"></i> X</button>
+          <button class="BRaction email-share-button" type="button"><i class="BRicon email" aria-hidden="true"></i> Email</button>
+        </div>
+        ${embedHtml}
       </div>
-      ${embedHtml}
-      <div class="BRfloatFoot">
-        <button class="share-finished" type="button" onclick="$.fn.colorbox.close();">Finished</button>
+      <div class="share-footer">
+        <button class="share-finished" type="button">Finished</button>
       </div>`);
 
     $form.appendTo($shareDiv);
@@ -205,42 +229,33 @@ export class Toolbar {
       }
     });
 
-    $form.find('input, textarea').on('focus', event => event.target.select());
+    $form.find('input[type=text], textarea').on('focus', event => event.target.select());
+    $form.find('.share-finished').on('click', () => $.colorbox.close());
 
-    // Bind share buttons
+    const $pageCheckbox = $form.find('.thispage-social');
+    const getSocialShareUrl = () => $pageCheckbox.prop('checked')
+      ? window.location.href
+      : getBookView().split('?')[0];
 
-    // Use url without hashes
     $form.find('.facebook-share-button').on("click", () => {
-      const params = $.param({ u: this._getSocialShareUrl() });
+      const params = $.param({ u: getSocialShareUrl() });
       const url = 'https://www.facebook.com/sharer.php?' + params;
       createPopup(url, 600, 400, 'Share');
     });
-    $form.find('.twitter-share-button').on("click", () => {
+    $form.find('.x-share-button').on("click", () => {
       const params = $.param({
-        url: this._getSocialShareUrl(),
+        url: getSocialShareUrl(),
         text: br.bookTitle,
       });
       const url = 'https://twitter.com/intent/tweet?' + params;
       createPopup(url, 600, 400, 'Share');
     });
     $form.find('.email-share-button').on("click", () => {
-      const body = `${br.bookTitle}\n\n${this._getSocialShareUrl()}`;
-      window.location.href = `mailto:?subject=${encodeURI(br.bookTitle)}&body=${encodeURI(body)}`;
+      const body = `${br.bookTitle}\n\n${getSocialShareUrl()}`;
+      window.location.href = `mailto:?subject=${encodeURIComponent(br.bookTitle)}&body=${encodeURIComponent(body)}`;
     });
 
     $form.find('input[name=thispage]').trigger('change');
-
-    $form.appendTo($shareDiv);
-  }
-
-  _getSocialShareUrl() {
-    const { br } = this;
-    const shareThisPage = br.$('.thispage-social').prop('checked');
-    if (shareThisPage) {
-      return window.location.href;
-    } else {
-      return `${document.location.protocol}//${window.location.hostname}${window.location.pathname}`;
-    }
   }
 
   /**
@@ -334,7 +349,7 @@ function blankShareDiv() {
     <div class="BRfloat BRshare">
       <div class="BRfloatHead">
         Share
-        <button class="floatShut" href="javascript:;" onclick="$.fn.colorbox.close();"><span class="br-colorbox-shift">Close</span></button>
+        <button class="floatShut" type="button" aria-label="Close"></button>
       </div>
     </div>`);
 }
